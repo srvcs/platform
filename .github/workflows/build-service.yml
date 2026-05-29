@@ -1,0 +1,112 @@
+name: build-service
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        required: true
+        type: string
+      publish:
+        description: Request publish. Effective only on main/tags.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Flake check
+        run: nix flake check -L
+
+      - name: Format, lint, test
+        run: |
+          nix develop -c sh -euc '
+            cargo fmt --check
+            cargo clippy --all-targets -- -D warnings
+            cargo test
+          '
+
+      - name: Validate OpenAPI is current
+        run: nix develop -c cargo test --test openapi_snapshot
+
+      - name: Build binary and image
+        run: |
+          nix build --fallback .#default -L
+          nix build --fallback .#container -L --out-link oci-image
+          cp -L oci-image image.tar.gz
+
+      - name: Smoke-test /healthz
+        run: |
+          set -euo pipefail
+          IMG=$(docker load -i image.tar.gz | sed -n 's/^Loaded image: //p' | head -1)
+          docker run -d --name svc -p 8080:8080 "$IMG"
+          for i in $(seq 1 30); do curl -fsS http://localhost:8080/healthz && ok=1 && break; sleep 1; done
+          docker logs svc || true
+          docker rm -f svc
+          test "${ok:-}" = "1"
+
+      - name: Hand image to the publish job
+        if: ${{ inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: oci-image
+          path: image.tar.gz
+          retention-days: 1
+
+  publish:
+    needs: check
+    if: ${{ inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Download image from check job
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: oci-image
+
+      - name: Push to GHCR
+        id: push
+        env:
+          GHCR: ghcr.io/${{ inputs.image-name }}
+        run: |
+          set -euo pipefail
+          IMG=$(docker load -i image.tar.gz | sed -n 's/^Loaded image: //p' | head -1)
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag "$IMG" "$GHCR:${{ github.sha }}"
+          docker tag "$IMG" "$GHCR:latest"
+          docker push "$GHCR:${{ github.sha }}"
+          docker push "$GHCR:latest"
+          echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$GHCR:${{ github.sha }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SBOM
+        run: nix develop -c syft "ghcr.io/${{ inputs.image-name }}@${{ steps.push.outputs.digest }}" -o spdx-json=sbom.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4.1.0
+        with:
+          subject-name: ghcr.io/${{ inputs.image-name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
