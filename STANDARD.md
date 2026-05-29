@@ -75,6 +75,18 @@ The workflow builds the binary, builds the container, runs the operational
 endpoint smoke test, pushes GHCR images, uploads an SBOM, and attests provenance
 for published images.
 
+Trusted preview deployments may ask the shared workflow to publish an explicit
+preview tag:
+
+```yaml
+with:
+  image-name: ${{ github.repository }}
+  publish-preview: true
+  preview-tag: pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+```
+
+Preview publishing is intended for maintainer-approved pull requests only.
+
 ## Starting A Service
 
 ```sh

@@ -11,6 +11,16 @@ on:
         required: false
         type: boolean
         default: false
+      publish-preview:
+        description: Publish a preview image tag for a trusted pull request.
+        required: false
+        type: boolean
+        default: false
+      preview-tag:
+        description: Preview image tag to publish when publish-preview is true.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -79,7 +89,7 @@ jobs:
           done
 
       - name: Hand image to the publish job
-        if: ${{ inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+        if: ${{ (inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || (inputs.publish-preview && inputs.preview-tag != '') }}
         uses: actions/upload-artifact@v7.0.1
         with:
           name: oci-image
@@ -88,7 +98,7 @@ jobs:
 
   publish:
     needs: check
-    if: ${{ inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+    if: ${{ (inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || (inputs.publish-preview && inputs.preview-tag != '') }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -108,14 +118,31 @@ jobs:
         id: push
         env:
           GHCR: ghcr.io/${{ inputs.image-name }}
+          RELEASE_PUBLISH: ${{ inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+          PREVIEW_PUBLISH: ${{ inputs.publish-preview && inputs.preview-tag != '' }}
+          PREVIEW_TAG: ${{ inputs.preview-tag }}
         run: |
           set -euo pipefail
           IMG=$(docker load -i image.tar.gz | sed -n 's/^Loaded image: //p' | head -1)
+          if [ "$PREVIEW_PUBLISH" = "true" ]; then
+            case "$PREVIEW_TAG" in
+              ""|*[!A-Za-z0-9_.-]*)
+                echo "::error::Preview tag must contain only letters, numbers, underscores, periods, and dashes."
+                exit 1
+                ;;
+            esac
+          fi
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker tag "$IMG" "$GHCR:${{ github.sha }}"
-          docker tag "$IMG" "$GHCR:latest"
           docker push "$GHCR:${{ github.sha }}"
-          docker push "$GHCR:latest"
+          if [ "$RELEASE_PUBLISH" = "true" ]; then
+            docker tag "$IMG" "$GHCR:latest"
+            docker push "$GHCR:latest"
+          fi
+          if [ "$PREVIEW_PUBLISH" = "true" ]; then
+            docker tag "$IMG" "$GHCR:$PREVIEW_TAG"
+            docker push "$GHCR:$PREVIEW_TAG"
+          fi
           echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$GHCR:${{ github.sha }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
 
       - name: Generate SBOM
