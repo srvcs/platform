@@ -83,4 +83,5 @@ nix flake init -t github:srvcs/platform#service
 
 After initialization, replace the `REPLACE-ME` OCI labels in `flake.nix` with the
 repository name and source URL. Rename the Rust package and binary when the
-service is ready to have an identity beyond the template.
+service is ready to have an identity beyond the template. The shared workflow
+fails fast if `REPLACE-ME` is still present in the root `flake.nix`.

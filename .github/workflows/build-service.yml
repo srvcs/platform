@@ -23,6 +23,15 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6.0.2
+
+      - name: Validate service metadata is stamped
+        run: |
+          set -euo pipefail
+          if grep -n "REPLACE-ME" flake.nix; then
+            echo "::error file=flake.nix::Replace REPLACE-ME OCI label placeholders before using the shared service workflow."
+            exit 1
+          fi
+
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Flake check

@@ -25,3 +25,6 @@ the Nix command.
 
 See [`srvcs/platform`](https://github.com/srvcs/platform) for the shared service
 standard and CI workflow.
+
+Before pushing, replace the `REPLACE-ME` OCI labels in `flake.nix`; the shared CI
+workflow fails fast if those placeholders are still present.
