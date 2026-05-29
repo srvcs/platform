@@ -52,7 +52,8 @@ If Docker rejects Nix sandbox setup with a seccomp error, retry with
 `--privileged` and add `--option sandbox false --option filter-syscalls false` to
 the Nix command.
 
-CI repeats these gates on Linux and smoke-tests `/healthz` from the built image.
+CI repeats these gates on Linux and smoke-tests `/healthz`, `/readyz`,
+`/metrics`, and `/openapi.json` from the built image.
 
 ## CI Contract
 
@@ -70,8 +71,9 @@ jobs:
 `image-name` is required. Publishing only happens on `main` and `v*` tags, even
 when callers set `publish: true`.
 
-The workflow builds the binary, builds the container, runs the health smoke test,
-pushes GHCR images, uploads an SBOM, and attests provenance for published images.
+The workflow builds the binary, builds the container, runs the operational
+endpoint smoke test, pushes GHCR images, uploads an SBOM, and attests provenance
+for published images.
 
 ## Starting A Service
 
