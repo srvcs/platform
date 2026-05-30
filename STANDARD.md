@@ -62,7 +62,7 @@ Services should call the shared workflow:
 ```yaml
 jobs:
   build:
-    uses: srvcs/platform/.github/workflows/build-service.yml@v1
+    uses: srvcs/platform/.github/workflows/build-service.yml@v2
     with:
       image-name: ${{ github.repository }}
       publish: true
