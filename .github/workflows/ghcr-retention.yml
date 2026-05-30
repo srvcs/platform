@@ -20,9 +20,6 @@ on:
         type: number
         default: 15
 
-permissions:
-  contents: read
-
 jobs:
   prune:
     runs-on: blacksmith-2vcpu-ubuntu-2404
