@@ -1,0 +1,38 @@
+name: ghcr-retention
+
+# Reusable GHCR retention for srvcs services. Each service publishes one image
+# version per main commit (`:<sha>`), re-tags `:latest`, and pushes provenance
+# referrers. Public package storage is free, so this is about tidiness, not cost:
+# keep the most recent versions and prune older ones. Pruning by recency (rather
+# than "delete untagged") keeps each retained image together with its provenance
+# referrers, and keeps `:latest` — which is always the newest version.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Container package name (the repository name, without the org prefix).
+        required: true
+        type: string
+      min-versions-to-keep:
+        description: Number of most-recent image versions to always retain.
+        required: false
+        type: number
+        default: 15
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      packages: write
+    steps:
+      - name: Prune old image versions, keeping the most recent
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ inputs.package }}
+          package-type: container
+          min-versions-to-keep: ${{ inputs.min-versions-to-keep }}
+          token: ${{ secrets.GITHUB_TOKEN }}
